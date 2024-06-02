@@ -23,8 +23,8 @@ namespace engine
 		constexpr UINT FrameCount = 2;
 
 		// pipeline components
-		CD3DX12_VIEWPORT m_viewport;
-		CD3DX12_RECT m_scissorRect;
+		CD3DX12_VIEWPORT g_viewport;
+		CD3DX12_RECT g_scissorRect;
 		ComPtr<IDXGISwapChain3> g_swapChain;
 		ComPtr<ID3D12Device> g_device;
 		ComPtr<ID3D12Resource> g_renderTargets[FrameCount];
@@ -149,22 +149,90 @@ namespace engine
 
 		void Render()
 		{
+			PopulateCommandList();
 
+			ID3D12CommandList* ppCommandLists[] = { g_commandList.Get() };
+			g_commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+
+			DX::ThrowIfFailed(g_swapChain->Present(1, 0));
+
+			WaitForPreviousFrame();
 		}
 
 		void Destroy()
 		{
+			WaitForPreviousFrame();
 
+			CloseHandle(g_fenceEvent);
 		}
 
 		void PopulateCommandList()
 		{
+			// Command list allocators can only be reset when the associated 
+			// command lists have finished execution on the GPU; apps should use 
+			// fences to determine GPU execution progress.
+			DX::ThrowIfFailed(g_commandAllocator->Reset());
 
+			// However, when ExecuteCommandList() is called on a particular command 
+			// list, that command list can then be reset at any time and must be before 
+			// re-recording.
+			DX::ThrowIfFailed(g_commandList->Reset(g_commandAllocator.Get(), g_pipelineState.Get()));
+
+			// Set necessary state.
+			g_commandList->SetGraphicsRootSignature(g_rootSignature.Get());
+			g_commandList->RSSetViewports(1, &g_viewport);
+			g_commandList->RSSetScissorRects(1, &g_scissorRect);
+
+			// Indicate that the back buffer will be used as a render target.
+			g_commandList->ResourceBarrier(1,
+				&CD3DX12_RESOURCE_BARRIER::Transition(
+					g_renderTargets[g_frameIndex].Get(), 
+					D3D12_RESOURCE_STATE_PRESENT, 
+					D3D12_RESOURCE_STATE_RENDER_TARGET
+				));
+
+			CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(g_rtvHeap->GetCPUDescriptorHandleForHeapStart(), g_frameIndex, g_rtvDescriptorSize);
+			g_commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
+
+			// Record commands.
+			const float clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
+			g_commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
+			g_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			g_commandList->IASetVertexBuffers(0, 1, &g_vertexBufferView);
+			g_commandList->DrawInstanced(3, 1, 0, 0);
+			//g_commandList->IASetIndexBuffer();
+			//g_commandList->DrawIndexedInstanced(3, 1, 0, 0, 0);
+
+			// Indicate that the back buffer will now be used to present.
+			g_commandList->ResourceBarrier(1,
+				&CD3DX12_RESOURCE_BARRIER::Transition(
+					g_renderTargets[g_frameIndex].Get(), 
+					D3D12_RESOURCE_STATE_RENDER_TARGET, 
+					D3D12_RESOURCE_STATE_PRESENT
+				));
+
+			DX::ThrowIfFailed(g_commandList->Close());
 		}
 
 		void WaitForPreviousFrame()
 		{
+			// WAITING FOR THE FRAME TO COMPLETE BEFORE CONTINUING IS NOT BEST PRACTICE.
+			// This is code implemented as such for simplicity. The D3D12HelloFrameBuffering
+			// sample illustrates how to use fences for efficient resource usage and to
+			// maximize GPU utilization.
 
+			// Signal and increment the fence value.
+			const UINT64 fence = g_fenceValue;
+			DX::ThrowIfFailed(g_commandQueue->Signal(g_fence.Get(), fence));
+			g_fenceValue++;
+
+			if (g_fence->GetCompletedValue() < fence)
+			{
+				DX::ThrowIfFailed(g_fence->SetEventOnCompletion(fence, g_fenceEvent));
+				WaitForSingleObject(g_fenceEvent, INFINITE);
+			}
+
+			g_frameIndex = g_swapChain->GetCurrentBackBufferIndex();
 		}
 	}
 }
