@@ -90,6 +90,17 @@
     <ClInclude Include="src\engine\types.h" />
     <ClInclude Include="src\engine\window.h" />
     <ClInclude Include="src\framework.h" />
+    <ClInclude Include="src\include\directx\d3dx12.h" />
+    <ClInclude Include="src\include\directx\d3dx12_barriers.h" />
+    <ClInclude Include="src\include\directx\d3dx12_check_feature_support.h" />
+    <ClInclude Include="src\include\directx\d3dx12_core.h" />
+    <ClInclude Include="src\include\directx\d3dx12_default.h" />
+    <ClInclude Include="src\include\directx\d3dx12_pipeline_state_stream.h" />
+    <ClInclude Include="src\include\directx\d3dx12_property_format_table.h" />
+    <ClInclude Include="src\include\directx\d3dx12_render_pass.h" />
+    <ClInclude Include="src\include\directx\d3dx12_resource_helpers.h" />
+    <ClInclude Include="src\include\directx\d3dx12_root_signature.h" />
+    <ClInclude Include="src\include\directx\d3dx12_state_object.h" />
     <ClInclude Include="src\redo.h" />
   </ItemGroup>
   <ItemGroup>

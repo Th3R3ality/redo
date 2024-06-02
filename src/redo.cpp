@@ -6,8 +6,11 @@
 
 // window managing headers
 #include "engine/window.h"
+#include "engine/directx.h"
 
 // Direct3D 12 headers
+#include "include/directx/d3dx12.h"
+
 #include <d3d12.h>
 #pragma comment (lib, "d3d12.lib")
 
@@ -23,6 +26,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
     {
         return FALSE;
     }
+
+    engine::directx::InitializePipeline();
 
     // Main application loop:
     MSG msg;

@@ -5,6 +5,8 @@
 #include <wrl/client.h>
 using namespace Microsoft::WRL;
 
+#include "../include/directx/d3dx12.h"
+
 #include <d3d12.h>
 #include <d3d12sdklayers.h>
 
@@ -20,10 +22,9 @@ namespace engine
 	{
 		constexpr UINT FrameCount = 2;
 
-
 		// pipeline components
-		//CD3DX12_VIEWPORT m_viewport;
-		//CD3DX12_RECT m_scissorRect;
+		CD3DX12_VIEWPORT m_viewport;
+		CD3DX12_RECT m_scissorRect;
 		ComPtr<IDXGISwapChain3> g_swapChain;
 		ComPtr<ID3D12Device> g_device;
 		ComPtr<ID3D12Resource> g_renderTargets[FrameCount];
@@ -45,10 +46,17 @@ namespace engine
 		ComPtr<ID3D12Fence> g_fence;
 		UINT64 g_fenceValue;
 
-		bool InitializePipeline()
+		void Init()
+		{
+			InitializePipeline();
+			InitializeAssets();
+		}
+
+		void InitializePipeline()
 		{
 			UINT dxgiFactoryFlags = 0;
 
+			// init debug layer
 #ifdef _DEBUG
 			ComPtr<ID3D12Debug> debugController;
 			if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController))))
@@ -59,14 +67,14 @@ namespace engine
 			}
 #endif
 
-			//create factory
+			// create factory
 			ComPtr<IDXGIFactory4> factory;
 			DX::ThrowIfFailed(CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(&factory)));
 
-			//create device
+			// create device
 			DX::ThrowIfFailed(D3D12CreateDevice(NULL, D3D_FEATURE_LEVEL::D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&g_device)));
 
-			//command queue desc
+			// command queue desc
 			D3D12_COMMAND_QUEUE_DESC queueDesc = {};
 			queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
 			queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
@@ -74,6 +82,7 @@ namespace engine
 			//create command queue
 			DX::ThrowIfFailed(g_device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&g_commandQueue)));
 
+			// swapchain desc
 			DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
 			swapChainDesc.BufferCount = FrameCount;
 			swapChainDesc.Width = window::GetWindowRect().w;
@@ -83,6 +92,7 @@ namespace engine
 			swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
 			swapChainDesc.SampleDesc.Count = 1;
 
+			// create swapchain
 			ComPtr<IDXGISwapChain1> swapChain;
 			DX::ThrowIfFailed(factory->CreateSwapChainForHwnd(
 				g_commandQueue.Get(),
@@ -92,9 +102,9 @@ namespace engine
 				nullptr,
 				&swapChain
 				));
-
 			DX::ThrowIfFailed(swapChain.As(&g_swapChain));
 
+			// get initial frameindex
 			g_frameIndex = g_swapChain->GetCurrentBackBufferIndex();
 
 			// create descriptor heaps
@@ -110,18 +120,51 @@ namespace engine
 
 			// create frame resource
 			{
-				D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle(g_rtvHeap->GetCPUDescriptorHandleForHeapStart());
+				CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(g_rtvHeap->GetCPUDescriptorHandleForHeapStart());
 
 				// create a rtv for each frame
 				for (UINT n = 0; n < FrameCount; n++)
 				{
 					DX::ThrowIfFailed(g_swapChain->GetBuffer(n, IID_PPV_ARGS(&g_renderTargets[n])));
 					g_device->CreateRenderTargetView(g_renderTargets[n].Get(), nullptr, rtvHandle);
-					
+					rtvHandle.Offset(1, g_rtvDescriptorSize);
 				}
 			}
 
-			return true;
+			// create command allocator
+			DX::ThrowIfFailed(g_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&g_commandAllocator)));
+
+			return;
+		}
+
+		void InitializeAssets()
+		{
+
+		}
+
+		void Update()
+		{
+
+		}
+
+		void Render()
+		{
+
+		}
+
+		void Destroy()
+		{
+
+		}
+
+		void PopulateCommandList()
+		{
+
+		}
+
+		void WaitForPreviousFrame()
+		{
+
 		}
 	}
 }
