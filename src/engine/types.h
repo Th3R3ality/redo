@@ -6,4 +6,6 @@ namespace engine
 	{
 		int x, y, w, h;
 	};
+
+	
 }

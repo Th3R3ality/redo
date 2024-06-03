@@ -18,16 +18,17 @@
 
 #define MAX_LOADSTRING 100
 
+
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow)
 {
-    engine::window::RegisterMainWindowClass(hInstance);
+    engine::window::RegisterWindowClass(hInstance);
 
     if (!engine::window::InitInstance(hInstance, nCmdShow))
     {
         return FALSE;
     }
 
-    engine::directx::InitializePipeline();
+    engine::directx::Init();
 
     // Main application loop:
     MSG msg;
@@ -41,7 +42,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
             if (msg.message == WM_QUIT)
                 break;
         }
+
+        engine::directx::Render();
     }
+    engine::directx::Destroy();
 
     return (int) msg.wParam;
 }

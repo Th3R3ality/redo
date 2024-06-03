@@ -69,6 +69,9 @@
     <ClInclude Include="src\include\directx\d3dx12_state_object.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\engine\helper.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\redo.cpp">
@@ -80,5 +83,8 @@
     <ClCompile Include="src\engine\window.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="src\engine\shaders\shaders.hlsl" />
   </ItemGroup>
 </Project>

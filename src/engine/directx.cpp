@@ -1,26 +1,27 @@
 #include "directx.h"
-
 #include "window.h"
 
 #include <wrl/client.h>
 using namespace Microsoft::WRL;
 
 #include "../include/directx/d3dx12.h"
+#include "directxhelper.h"
 
 #include <d3d12.h>
 #include <d3d12sdklayers.h>
-
 #include <dxgi.h>
 #include <dxgi1_4.h>
 #pragma comment(lib, "DXGI.lib")
+#include <d3dcompiler.h>
+#pragma comment(lib, "D3DCompiler.lib")
 
-#include "directxhelper.h"
 
 namespace engine
 {
 	namespace directx
 	{
 		constexpr UINT FrameCount = 2;
+		float g_aspectRatio = 800.f / 600.f;
 
 		// pipeline components
 		CD3DX12_VIEWPORT g_viewport;
@@ -48,6 +49,12 @@ namespace engine
 
 		void Init()
 		{
+			g_frameIndex = 0;
+			g_viewport = CD3DX12_VIEWPORT( 0.0f, 0.0f, static_cast<float>(800), static_cast<float>(600) );
+			g_scissorRect = CD3DX12_RECT( 0, 0, static_cast<LONG>(800), static_cast<LONG>(600) );
+			g_rtvDescriptorSize = 0;
+
+
 			InitializePipeline();
 			InitializeAssets();
 		}
@@ -139,7 +146,122 @@ namespace engine
 
 		void InitializeAssets()
 		{
+			// Create an empty root signature.
+			{
+				CD3DX12_ROOT_SIGNATURE_DESC rootSignatureDesc;
+				rootSignatureDesc.Init(0, nullptr, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
+				ComPtr<ID3DBlob> signature;
+				ComPtr<ID3DBlob> error;
+				DX::ThrowIfFailed(D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error));
+				DX::ThrowIfFailed(g_device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&g_rootSignature)));
+			}
+
+			// Create the pipeline state, which includes compiling and loading shaders.
+			{
+
+				ComPtr<ID3DBlob> vertexShader;
+				ComPtr<ID3DBlob> pixelShader;
+
+#if defined(_DEBUG)
+				// Enable better shader debugging with the graphics debugging tools.
+				UINT compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+#else
+				UINT compileFlags = 0;
+#endif
+
+				const wchar_t* shaderpath = SHADERPATHW(shaders);
+				DX::ThrowIfFailed(D3DCompileFromFile(shaderpath, nullptr, nullptr, "VSMain", "vs_5_0", compileFlags, 0, &vertexShader, nullptr));
+				DX::ThrowIfFailed(D3DCompileFromFile(shaderpath, nullptr, nullptr, "PSMain", "ps_5_0", compileFlags, 0, &pixelShader, nullptr));
+
+				// Define the vertex input layout.
+				D3D12_INPUT_ELEMENT_DESC inputElementDescs[] =
+				{
+					{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+					{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+				};
+
+				// Describe and create the graphics pipeline state object (PSO).
+				D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+				psoDesc.InputLayout = { inputElementDescs, _countof(inputElementDescs) };
+				psoDesc.pRootSignature = g_rootSignature.Get();
+				psoDesc.VS = CD3DX12_SHADER_BYTECODE(vertexShader.Get());
+				psoDesc.PS = CD3DX12_SHADER_BYTECODE(pixelShader.Get());
+				psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+				psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+				psoDesc.DepthStencilState.DepthEnable = FALSE;
+				psoDesc.DepthStencilState.StencilEnable = FALSE;
+				psoDesc.SampleMask = UINT_MAX;
+				psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+				psoDesc.NumRenderTargets = 1;
+				psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+				psoDesc.SampleDesc.Count = 1;
+				DX::ThrowIfFailed(g_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&g_pipelineState)));
+
+				// Create the command list.
+				DX::ThrowIfFailed(g_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, g_commandAllocator.Get(), g_pipelineState.Get(), IID_PPV_ARGS(&g_commandList)));
+
+				// Command lists are created in the recording state, but there is nothing
+				// to record yet. The main loop expects it to be closed, so close it now.
+				DX::ThrowIfFailed(g_commandList->Close());
+
+				// Create the vertex buffer.
+				{
+					// Define the geometry for a triangle.
+					Vertex triangleVertices[] =
+					{
+						{ { 0.0f, 0.25f * g_aspectRatio, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
+						{ { 0.25f, -0.25f * g_aspectRatio, 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
+						{ { -0.25f, -0.25f * g_aspectRatio, 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f } }
+					};
+
+					const UINT vertexBufferSize = sizeof(triangleVertices);
+
+					// Note: using upload heaps to transfer static data like vert buffers is not 
+					// recommended. Every time the GPU needs it, the upload heap will be marshalled 
+					// over. Please read up on Default Heap usage. An upload heap is used here for 
+					// code simplicity and because there are very few verts to actually transfer.
+					D3D12_HEAP_PROPERTIES heapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+					D3D12_RESOURCE_DESC resourceDesc = CD3DX12_RESOURCE_DESC::Buffer(vertexBufferSize);
+					DX::ThrowIfFailed(g_device->CreateCommittedResource(
+						&heapProp,
+						D3D12_HEAP_FLAG_NONE,
+						&resourceDesc,
+						D3D12_RESOURCE_STATE_GENERIC_READ,
+						nullptr,
+						IID_PPV_ARGS(&g_vertexBuffer)));
+
+					// Copy the triangle data to the vertex buffer.
+					UINT8* pVertexDataBegin;
+					CD3DX12_RANGE readRange(0, 0);        // We do not intend to read from this resource on the CPU.
+					DX::ThrowIfFailed(g_vertexBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pVertexDataBegin)));
+					memcpy(pVertexDataBegin, triangleVertices, sizeof(triangleVertices));
+					g_vertexBuffer->Unmap(0, nullptr);
+
+					// Initialize the vertex buffer view.
+					g_vertexBufferView.BufferLocation = g_vertexBuffer->GetGPUVirtualAddress();
+					g_vertexBufferView.StrideInBytes = sizeof(Vertex);
+					g_vertexBufferView.SizeInBytes = vertexBufferSize;
+				}
+
+				// Create synchronization objects and wait until assets have been uploaded to the GPU.
+				{
+					DX::ThrowIfFailed(g_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&g_fence)));
+					g_fenceValue = 1;
+
+					// Create an event handle to use for frame synchronization.
+					g_fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+					if (g_fenceEvent == nullptr)
+					{
+						DX::ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()));
+					}
+
+					// Wait for the command list to execute; we are reusing the same command 
+					// list in our main loop but for now, we just want to wait for setup to 
+					// complete before continuing.
+					WaitForPreviousFrame();
+				}
+			}
 		}
 
 		void Update()
@@ -184,12 +306,14 @@ namespace engine
 			g_commandList->RSSetScissorRects(1, &g_scissorRect);
 
 			// Indicate that the back buffer will be used as a render target.
-			g_commandList->ResourceBarrier(1,
-				&CD3DX12_RESOURCE_BARRIER::Transition(
-					g_renderTargets[g_frameIndex].Get(), 
-					D3D12_RESOURCE_STATE_PRESENT, 
-					D3D12_RESOURCE_STATE_RENDER_TARGET
-				));
+			{
+				CD3DX12_RESOURCE_BARRIER barrier =
+					CD3DX12_RESOURCE_BARRIER::Transition(
+						g_renderTargets[g_frameIndex].Get(),
+						D3D12_RESOURCE_STATE_PRESENT,
+						D3D12_RESOURCE_STATE_RENDER_TARGET);
+				g_commandList->ResourceBarrier(1, &barrier);
+			}
 
 			CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(g_rtvHeap->GetCPUDescriptorHandleForHeapStart(), g_frameIndex, g_rtvDescriptorSize);
 			g_commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
@@ -204,14 +328,16 @@ namespace engine
 			//g_commandList->DrawIndexedInstanced(3, 1, 0, 0, 0);
 
 			// Indicate that the back buffer will now be used to present.
-			g_commandList->ResourceBarrier(1,
-				&CD3DX12_RESOURCE_BARRIER::Transition(
-					g_renderTargets[g_frameIndex].Get(), 
-					D3D12_RESOURCE_STATE_RENDER_TARGET, 
-					D3D12_RESOURCE_STATE_PRESENT
-				));
+			{
+				CD3DX12_RESOURCE_BARRIER barrier =
+					CD3DX12_RESOURCE_BARRIER::Transition(
+						g_renderTargets[g_frameIndex].Get(),
+						D3D12_RESOURCE_STATE_RENDER_TARGET,
+						D3D12_RESOURCE_STATE_PRESENT);
+				g_commandList->ResourceBarrier(1, &barrier);
 
-			DX::ThrowIfFailed(g_commandList->Close());
+				DX::ThrowIfFailed(g_commandList->Close());
+			}
 		}
 
 		void WaitForPreviousFrame()

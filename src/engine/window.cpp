@@ -1,6 +1,5 @@
 #include "window.h"
 
-
 namespace engine
 {
     namespace window
@@ -22,7 +21,7 @@ namespace engine
             return g_hwnd;
 	    }
 
-        ATOM RegisterMainWindowClass(HINSTANCE hInstance)
+        ATOM RegisterWindowClass(HINSTANCE hInstance)
         {
             WNDCLASSEXW wcex;
 
@@ -80,6 +79,7 @@ namespace engine
             switch (message)
             {
             case WM_DESTROY:
+                
                 PostQuitMessage(0);
                 break;
 
